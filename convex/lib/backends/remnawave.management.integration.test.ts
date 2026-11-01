@@ -487,10 +487,23 @@ describe.skipIf(!BASE_URL || !API_TOKEN)('remnawave management contract (integra
       profile: { configProfileUuid: profileUuid, activeInboundUuids: [a, b] },
     });
     expect((await node()).activeInboundUuids.sort()).toEqual([a, b].sort());
+    // The enable/disable actions answer before the row settles (the backend hands
+    // the node to its start/stop job queue), so read the flag back until it lands
+    // instead of trusting the first read: a single read raced the queue on
+    // 2026-10-31 (run 41210914972) with the same commit and panel pin that passed
+    // the seven nights before.
+    const settlesTo = async (disabled: boolean) => {
+      let seen = (await node()).isDisabled;
+      for (let i = 0; i < 20 && seen !== disabled; i++) {
+        await new Promise((r) => setTimeout(r, 250));
+        seen = (await node()).isDisabled;
+      }
+      return seen;
+    };
     await w.setNodeEnabled(cfg, nodeUuid, false);
-    expect((await node()).isDisabled).toBe(true);
+    expect(await settlesTo(true)).toBe(true);
     await w.setNodeEnabled(cfg, nodeUuid, true);
-    expect((await node()).isDisabled).toBe(false);
+    expect(await settlesTo(false)).toBe(false);
     await w.restartNode(cfg, nodeUuid);
     await w.deleteNode(cfg, nodeUuid);
     // The backend queues the removal: the row leaves shortly after, not with the answer.
